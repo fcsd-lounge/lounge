@@ -1,0 +1,3 @@
+{
+  "test": { "name": "測試服務廠", "exec": "https://script.google.com/macros/s/請把這裡換成你的部署ID/exec" }
+}
