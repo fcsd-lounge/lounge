@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="客休室看板">
+<title>客休室座位看板</title>
+<style>
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --fg:#17202b; --muted:#5d6b7a; --line:#d3dae2;
+  --floor:#f7f9fb; --grid:#e3e8ee; --accent:#1f4e79; --accent-fg:#ffffff;
+  --free:#ffffff; --free-bd:#9aa8b6; --busy:#d7e6f4; --busy-bd:#1f4e79;
+  --hold:#fff1cc; --hold-bd:#c58a00; --alert:#e5383b; --alert-soft:#fde3e3;
+  --stale:#e07a00; --fixture:#e4e8ed; --ok:#1d8a52;
+  --f-body:system-ui,-apple-system,"PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif;
+  --f-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0f151c; --panel:#18212b; --fg:#e6ecf2; --muted:#93a2b2; --line:#2b3744;
+  --floor:#141c25; --grid:#1e2833; --accent:#5b9bd5; --accent-fg:#0f151c;
+  --free:#1b2530; --free-bd:#4f6072; --busy:#1d3550; --busy-bd:#5b9bd5;
+  --hold:#3b3016; --hold-bd:#e0a92a; --alert:#ff5a5d; --alert-soft:#3d1c1e; --stale:#ffa040; --fixture:#222d39; --ok:#2fae6c;
+  color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.5;
+  padding:16px max(16px,env(safe-area-inset-right,0px)) 32px max(16px,env(safe-area-inset-left,0px))}
+.wrap{width:100%;max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+h1{font-size:20px;margin:0}
+.sub{color:var(--muted);font-size:13px}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:4px}
+.tabs a{color:var(--muted);text-decoration:none;font-weight:500;padding:7px 14px;border-radius:7px}
+.tabs a[aria-current="page"]{background:var(--accent);color:var(--accent-fg)}
+button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.loading{color:var(--muted);text-align:center;padding:40px 0}
+
+.alertbar{display:flex;flex-direction:column;gap:6px}
+.alertrow{display:flex;align-items:center;gap:10px;background:var(--alert-soft);border:1px solid var(--alert);border-radius:10px;padding:8px 12px;flex-wrap:wrap}
+.alertrow b{color:var(--alert);font-family:var(--f-mono);font-size:16px}
+.alertrow .t{font-family:var(--f-mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+.alertrow button{margin-left:auto}
+
+.main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}
+@media (max-width:880px){.main{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.card h2{font-size:15px;margin:0}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:14px;border-radius:4px;border:2px solid;display:inline-block}
+.conn{font-size:12px;color:var(--muted)}
+
+.floor{position:relative;width:100%;aspect-ratio:16/10;background-color:var(--floor);
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:5% 8%;border:1px solid var(--line);border-radius:10px;overflow:hidden;touch-action:none;container-type:inline-size;width:100%;margin:0 auto;max-width:100%}
+body.pg-board .wrap{max-width:none}
+@media (min-width:1400px){body.pg-board .main{grid-template-columns:minmax(0,1fr) 280px}}
+.alertbar{position:sticky;top:0;z-index:5}
+.viewbtns{display:flex;flex-wrap:wrap;gap:4px}
+.viewbtns .btn[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.slist{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.stile{border:2px solid var(--free-bd);background:var(--free);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.stile .lb{font-family:var(--f-mono);font-size:22px;font-weight:700;line-height:1.1}
+.stile .ss{font-size:13px;font-weight:500}
+.stile .tm{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-height:1.5em}
+.stile.busy{background:var(--busy);border-color:var(--busy-bd)}
+.stile.hold{background:var(--hold);border-color:var(--hold-bd)}
+.stile.stale{outline:3px dashed var(--stale);outline-offset:2px}
+.stile.alert{background:var(--alert);border-color:var(--alert);color:#fff;animation:pulse 1s infinite}
+.stile.alert .tm{color:#fff}
+.stile .btn{width:100%}
+.stile.alert .btn{background:#fff;color:var(--alert);border-color:#fff}
+body.wall header,body.wall #side,body.wall .boardhint,body.wall #ntf{display:none!important}
+body.wall .main{grid-template-columns:minmax(0,1fr)}
+body.wall{padding-top:8px;padding-bottom:8px}
+@media (max-width:600px){h1{font-size:17px}.card{padding:10px}}
+.item{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;
+  border:2px solid var(--free-bd);background:var(--free) center/contain no-repeat;color:var(--fg);user-select:none;text-align:center;line-height:1.15;padding:2px}
+/* 文字大小跟著座位圖寬度縮放（手機小、大螢幕大） */
+.item .code{font-family:var(--f-mono);font-weight:600;font-size:clamp(10px,2.1cqw,34px)}
+.item.deco .code{font-family:var(--f-body);font-weight:500;font-size:clamp(9px,1.4cqw,22px);color:var(--muted)}
+.item .st{font-size:clamp(8px,1.3cqw,20px);color:var(--muted)}
+.item .code,.item .st,.item .plate{flex:none}
+/* 車牌：仿台灣白底黑字車牌 */
+.plate{display:inline-block;background:#fff;color:#111;border:1.5px solid #111;border-radius:4px;padding:0 .45em;font-family:var(--f-mono);font-weight:700;letter-spacing:.06em;
+  font-size:clamp(8px,1.15cqw,17px);line-height:1.35;box-shadow:inset 0 0 0 1.5px #fff,0 1px 2px rgb(0 0 0 / .2);white-space:nowrap;margin-top:2px;cursor:pointer}
+.plate.miss{background:transparent;color:var(--muted);border:1.5px dashed var(--free-bd);box-shadow:none;font-family:var(--f-body);font-weight:500;letter-spacing:0}
+.item.alert .plate.miss{color:#fff;border-color:rgb(255 255 255 / .75)}
+.item.hit{box-shadow:0 0 0 4px var(--accent),0 0 18px 4px color-mix(in srgb,var(--accent) 45%,transparent)!important;z-index:2}
+.stile.hit{box-shadow:0 0 0 3px var(--accent)}
+.stile .plate{font-size:14px;align-self:flex-start;margin:0}
+.search{font:inherit;color:var(--fg);background:var(--floor);border:1px solid var(--line);border-radius:8px;padding:5px 10px;width:170px;max-width:100%;text-transform:uppercase}
+.search::placeholder{text-transform:none}
+.pform{display:flex;gap:6px;align-items:stretch}
+.pform input{font:inherit;font-family:var(--f-mono);font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--fg);background:var(--floor);border:1px solid var(--line);border-radius:8px;padding:7px 9px;min-width:0;flex:1}
+.pform input::placeholder{font-family:var(--f-body);font-weight:400;letter-spacing:0;text-transform:none}
+.cust .pcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.cust .pcard .pl{font-size:14px;font-weight:700}
+.cust .pcard .pl span{font-weight:400;color:var(--muted);font-size:12px}
+.cust .pcard .plate{font-size:26px;padding:2px 14px;border-width:2.5px;cursor:default}
+.cust .pform input{font-size:20px;padding:10px 12px}
+.ntf summary{cursor:pointer;font-weight:700;font-size:15px;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ntf summary::-webkit-details-marker{display:none}
+.ntf summary::after{content:"展開 ▾";font-size:12px;font-weight:500;color:var(--muted)}
+.ntf[open] summary::after{content:"收合 ▴"}
+.ntf .badge{font-size:12px;font-weight:500;padding:2px 10px;border-radius:99px;border:1px solid var(--line);margin-left:auto}
+.ntf .badge.ok{background:var(--busy);border-color:var(--busy-bd)}
+.ntf .badge.no{background:var(--hold);border-color:var(--hold-bd)}
+.ntf ol{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:10px;max-width:70ch}
+.ntf li::marker{font-weight:700;color:var(--accent)}
+.ntf .note{font-size:12px;color:var(--muted);background:var(--floor);border-radius:8px;padding:8px 10px;max-width:70ch}
+.item .eta{flex:none;font-family:var(--f-mono);font-weight:600;font-size:clamp(8px,1.1cqw,16px);line-height:1.3;color:var(--fg);font-variant-numeric:tabular-nums;white-space:nowrap}
+.item .eta.late{color:var(--stale)}
+.item .eta.done{color:var(--ok);}
+.item.alert .eta{color:#fff}
+.stile .eta{font-family:var(--f-mono);font-weight:600;font-size:13px;font-variant-numeric:tabular-nums}
+.stile .eta.late{color:var(--stale)}
+.stile .eta.done{color:var(--ok)}
+.delivery{display:flex;flex-direction:column;gap:8px}
+.delivery .row input[type=time]{font:inherit;font-family:var(--f-mono);font-weight:600;color:var(--fg);background:var(--floor);border:1px solid var(--line);border-radius:8px;padding:6px 9px;flex:1;min-width:0}
+.btn.go{background:var(--ok);color:#fff;border-color:var(--ok)}
+.cust .eta-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.cust .eta-card .k{font-size:14px;font-weight:700}
+.cust .eta-card .k span{display:block;font-size:12px;font-weight:400;color:var(--muted)}
+.cust .eta-card .v{font-family:var(--f-mono);font-size:34px;font-weight:700;font-variant-numeric:tabular-nums}
+.cust .ready{background:var(--ok);color:#fff;border-radius:18px;padding:20px 16px;display:flex;flex-direction:column;gap:12px;text-align:center;animation:pop .5s ease-out}
+.cust .ready .t1{font-size:24px;font-weight:700;line-height:1.3}
+.cust .ready .t2{font-size:15px}
+.cust .ready button{font:inherit;font-size:18px;font-weight:700;border:0;border-radius:12px;padding:14px;background:#fff;color:var(--ok);cursor:pointer}
+@keyframes pop{from{transform:scale(.94);opacity:.4}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.cust .ready{animation:none}}
+.linkbtn{font:inherit;border:0;background:transparent;color:var(--accent);text-decoration:underline;cursor:pointer;padding:4px}
+.item.has-img .code,.item.has-img .st{background:color-mix(in srgb,var(--panel) 82%,transparent);border-radius:4px;padding:0 4px}
+.sh-circle{border-radius:50%}.sh-rect{border-radius:3px}.sh-rounded{border-radius:12px}.sh-pill{border-radius:999px}
+.sh-sofa{border-radius:16px 16px 5px 5px;border-top-width:7px!important}
+.item.deco{background-color:var(--fixture);border-style:dashed}
+.item.busy{background-color:var(--busy);border-color:var(--busy-bd)}
+.item.hold{background-color:var(--hold);border-color:var(--hold-bd)}
+.item.hold .st{color:var(--hold-bd);font-weight:700}
+.item.stale{outline:3px dashed var(--stale);outline-offset:3px}
+.item.alert{background-color:var(--alert);border-color:var(--alert);color:#fff;animation:pulse 1s infinite}
+.item.alert .st{color:#fff;font-weight:700}
+.item.alert.has-img .code,.item.alert.has-img .st{background:var(--alert);color:#fff}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--alert) 60%,transparent)}50%{box-shadow:0 0 0 10px transparent}}
+@media (prefers-reduced-motion:reduce){.item.alert{animation:none}}
+.edit .item{cursor:grab}
+.edit .item.sel{outline:3px solid var(--accent);outline-offset:3px}
+.board .item.seat{cursor:pointer}
+.rot-h{position:absolute;left:50%;top:-34px;width:24px;height:24px;margin-left:-12px;border-radius:50%;background:var(--accent);color:var(--accent-fg);border:2px solid var(--panel);cursor:grab;display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;z-index:3;padding:0;touch-action:none}
+.rot-h::after{content:"";position:absolute;top:100%;left:50%;width:2px;height:10px;background:var(--accent);margin-left:-1px}
+.angle{font-family:var(--f-mono);font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums}
+.del-x{position:absolute;top:-12px;right:-12px;width:26px;height:26px;border-radius:50%;border:2px solid var(--panel);background:var(--alert);color:#fff;font-size:14px;font-weight:700;line-height:1;cursor:pointer;z-index:2;display:flex;align-items:center;justify-content:center;padding:0}
+
+.btn{font:inherit;font-weight:500;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;padding:7px 12px;cursor:pointer;text-decoration:none;display:inline-block}
+.btn.sm{padding:4px 9px;font-size:12px}
+.btn.pri{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.btn.warn{background:var(--alert);color:#fff;border-color:var(--alert)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);min-width:0}
+.field input,.field select{font:inherit;color:var(--fg);background:var(--floor);border:1px solid var(--line);border-radius:8px;padding:7px 9px;min-width:0;width:100%}
+.check{display:flex;align-items:center;gap:6px;font-size:13px}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.err{color:var(--alert);font-size:13px;margin:0}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
+.stats div{background:var(--floor);border-radius:8px;padding:6px 2px}
+.stats b{display:block;font-family:var(--f-mono);font-size:18px;font-variant-numeric:tabular-nums}
+.stats span{font-size:11px;color:var(--muted)}
+.section{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px}
+.savebar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;background:var(--floor);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.savebar.dirty{border-color:var(--hold-bd);background:var(--hold)}
+
+.plist{display:flex;flex-direction:column;gap:6px}
+.pitem{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;background:var(--floor);border:1px solid var(--line);border-radius:10px;padding:6px 8px}
+.pthumb{width:44px;height:34px;display:flex;align-items:center;justify-content:center}
+.pthumb i{display:block;border:2px solid var(--free-bd);background:var(--free) center/contain no-repeat}
+.pname{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pmeta{font-size:11px;color:var(--muted)}
+.chips{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px}
+.chip{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:99px;background:var(--panel);font-size:12px;overflow:hidden}
+.chip button{font:inherit;border:0;background:transparent;color:var(--fg);cursor:pointer;padding:2px 8px}
+.chip button.x{color:var(--alert);padding:2px 8px 2px 4px;font-weight:700}
+.chip.on{border-color:var(--accent)}
+.confirm{background:var(--alert-soft);border:1px solid var(--alert);border-radius:8px;padding:8px;font-size:12px;display:flex;flex-direction:column;gap:6px;grid-column:1/-1}
+
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);border-radius:10px;padding:10px 14px;display:flex;gap:12px;align-items:center;z-index:20;max-width:calc(100% - 32px)}
+.toast button{font:inherit;font-weight:700;border:0;background:transparent;color:var(--bg);text-decoration:underline;cursor:pointer}
+[hidden]{display:none!important}
+
+.pin{max-width:320px;margin:40px auto;display:flex;flex-direction:column;gap:12px}
+
+/* QR Code 列印 */
+.qrgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+.qrcard{background:#fff;color:#17202b;border:1px solid #c9d2dc;border-radius:12px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;break-inside:avoid;page-break-inside:avoid}
+.qrcard .dealer{font-size:12px;color:#5d6b7a}
+.qrcard .lbl{font-family:var(--f-mono);font-size:34px;font-weight:700;line-height:1}
+.qrcard .qr img,.qrcard .qr canvas{display:block}
+.qrcard .tip{font-size:13px;font-weight:500}
+.qrcard a{font-size:11px;color:#1f4e79}
+@media print{
+  body{background:#fff;padding:0}
+  header,.noprint{display:none!important}
+  .qrgrid{grid-template-columns:repeat(3,1fr)}
+  .qrcard a{display:none}
+}
+
+/* 顧客手機頁 */
+.cust{max-width:420px;margin:0 auto;display:flex;flex-direction:column;gap:14px;padding-top:12px}
+.cust .brand{font-size:13px;color:var(--muted);text-align:center}
+.cust .tbl{text-align:center;font-family:var(--f-mono);font-size:44px;font-weight:700;line-height:1.1}
+.cust .cstate{text-align:center;font-size:14px}
+.pill{display:inline-block;padding:3px 12px;border-radius:99px;border:2px solid var(--busy-bd);background:var(--busy);font-weight:500}
+.pill.hold{border-color:var(--hold-bd);background:var(--hold)}
+.pill.alert{border-color:var(--alert);background:var(--alert);color:#fff}
+.pill.free{border-color:var(--free-bd);background:var(--free)}
+.big{font:inherit;font-size:20px;font-weight:700;border-radius:16px;padding:22px;border:0;cursor:pointer;width:100%}
+.big:disabled{opacity:.5;cursor:not-allowed}
+.big.svc{background:var(--alert);color:#fff}
+.big.rsv{background:var(--hold);color:var(--fg);border:2px solid var(--hold-bd)}
+.big.scan{background:var(--accent);color:var(--accent-fg)}
+.cust .msg{font-size:15px;text-align:center;min-height:2.6em}
+.cust .foot{font-size:12px;color:var(--muted);text-align:center;margin:0}
+</style>
+</head>
+<body>
+<div id="app"><p class="loading">載入中…</p></div>
+<div class="toast" id="toast" hidden><span id="toastMsg"></span><button id="undoBtn" hidden>復原</button></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+/* ---------- 啟動：從網址判斷是哪一家經銷商、哪個畫面 ----------
+   網址格式：…/?d=經銷商代碼            → 同仁看板
+             …/?d=經銷商代碼&page=edit  → 編輯座位圖（qr＝列印 QR Code）
+             …/?d=經銷商代碼&t=座位ID   → 顧客頁（QR Code 內容）
+   經銷商代碼對應的 Apps Script 網址寫在 dealers.json（只有總部能改） */
+const Q=new URLSearchParams(location.search);
+const BOOT={dealer:(Q.get('d')||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,40),
+  table:(Q.get('t')||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,20),exec:''};
+BOOT.page=BOOT.table?'customer':(['board','edit','qr'].indexOf(Q.get('page'))>=0?Q.get('page'):'board');
+const BASE=location.origin+location.pathname;
+const FRONT=BASE+'?d='+BOOT.dealer;
+const EXEC_RE=/^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[A-Za-z0-9_-]+\/exec$/;
+const SHAPES={circle:'圓形',rect:'方形',rounded:'圓角方形',pill:'長條',sofa:'沙發'};
+const LABEL={free:'空位',busy:'有客人',hold:'保留中',alert:'需要服務'};
+const $=id=>document.getElementById(id);
+const clone=o=>JSON.parse(JSON.stringify(o));
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const mmss=ms=>{const s=Math.max(0,Math.floor(ms/1000));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')};
+const dur=ms=>{const m=Math.max(0,Math.floor(ms/60000));return m<60?m+' 分':Math.floor(m/60)+' 小時 '+(m%60)+' 分'};
+const newId=()=>'S'+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4);
+// 同一台裝置可能開過不同經銷商，記憶的資料依經銷商分開
+const NS=()=>'lounge:'+BOOT.dealer+':';
+function lsGet(k){try{return localStorage.getItem(NS()+k)}catch(e){return null}}
+function lsSet(k,v){try{localStorage.setItem(NS()+k,v)}catch(e){}}
+function lsDel(k){try{localStorage.removeItem(NS()+k)}catch(e){}}
+async function callExec(exec,fn,args){
+  let r;
+  try{r=await fetch(exec,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({fn,args}),redirect:'follow'})}
+  catch(e){throw new Error('連不到伺服器，請檢查網路')}
+  if(!r.ok)throw new Error('伺服器回應 '+r.status);
+  let j; try{j=await r.json()}catch(e){throw new Error('伺服器回應格式不對，請確認 Apps Script 已用新版本部署')}
+  if(!j.ok)throw new Error(j.error||'發生錯誤');
+  return j.result;
+}
+function api(fn,...args){return callExec(BOOT.exec,fn,args)}
+const pageUrl=p=>FRONT+'&page='+p;
+const seatUrl=id=>FRONT+'&t='+encodeURIComponent(id);
+
+let toastTimer=null, undoFn=null;
+function toast(msg,undo){
+  $('toastMsg').textContent=msg; $('toast').hidden=false; undoFn=undo||null; $('undoBtn').hidden=!undo;
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>{$('toast').hidden=true;undoFn=null},undo?8000:4000);
+}
+$('undoBtn').onclick=()=>{if(undoFn)undoFn();undoFn=null;$('toast').hidden=true};
+const fail=e=>toast('發生錯誤：'+((e&&e.message)||e));
+
+/* ---------- 共用：同仁頁框架與密碼 ---------- */
+function shell(active){
+  document.body.classList.add('pg-'+active);
+  $('app').innerHTML=`<div class="wrap"><header><div><h1>客休室座位看板</h1><div class="sub" id="hSub"></div></div>
+    <nav class="tabs">${[['board','同仁看板'],['edit','編輯座位圖'],['qr','列印 QR Code']].map(([k,v])=>`<a href="${pageUrl(k)}"${k===active?' aria-current="page"':''}>${v}</a>`).join('')}</nav>
+    </header><div id="body" class="wrap" style="max-width:none"><p class="loading">載入中…</p></div></div>`;
+}
+async function staffGate(){
+  const saved=lsGet('lounge_pin');
+  if(saved){try{if(await api('apiCheckPin',saved,FRONT))return saved}catch(e){}}
+  return new Promise(resolve=>{
+    $('body').innerHTML=`<form class="card pin" id="pinForm"><h2>請輸入管理密碼</h2>
+      <label class="field">密碼（在試算表「設定」分頁）<input id="pinIn" type="password" inputmode="numeric" autocomplete="off"></label>
+      <p class="err" id="pinErr"></p><button class="btn pri" type="submit">進入</button>
+      <p class="hint">這台電腦會記住密碼，下次不用再輸入。</p></form>`;
+    $('pinIn').focus();
+    $('pinForm').onsubmit=async e=>{
+      e.preventDefault(); const v=$('pinIn').value.trim(); $('pinErr').textContent='確認中…';
+      try{ if(await api('apiCheckPin',v,FRONT)){lsSet('lounge_pin',v);resolve(v)} else $('pinErr').textContent='密碼不正確，請再試一次。'}
+      catch(err){$('pinErr').textContent='無法連線：'+(err.message||err)}
+    };
+  });
+}
+
+/* ---------- 共用：畫座位圖 ---------- */
+function renderFloor(el,L,o){
+  el.innerHTML='';
+  const pm={}; L.patterns.forEach(p=>pm[p.id]=p);
+  L.items.forEach(it=>{
+    const p=pm[it.pid]||{shape:'rect',seat:false};
+    const s=p.seat&&o.state?o.state(it):'';
+    const d=document.createElement('div');
+    d.className=['item','sh-'+p.shape,p.seat?'seat':'deco',s,p.img?'has-img':'',o.sel===it.id?'sel':'',o.stale&&p.seat&&o.stale(it)?'stale':''].join(' ');
+    const r=Number(it.r)||0, keep='rotate('+(-r)+'deg)';
+    Object.assign(d.style,{left:it.x+'%',top:it.y+'%',width:it.w+'%',height:it.h+'%',transform:'translate(-50%,-50%) rotate('+r+'deg)'});
+    if(p.img)d.style.backgroundImage='url("'+p.img+'")';
+    d.dataset.id=it.id; d.dataset.r=r;
+    const c=document.createElement('span');c.className='code';c.textContent=it.label;if(r)c.style.transform=keep;d.appendChild(c);
+    const sub=p.seat&&o.sub?o.sub(it,s):'';
+    if(sub){const t=document.createElement('span');t.className='st';t.textContent=sub;if(r)t.style.transform=keep;d.appendChild(t)}
+    const pv=p.seat&&o.plate?o.plate(it,s):null;           // null＝不顯示；''＝尚未填寫
+    if(pv!==null){const pl=document.createElement('span');pl.className='plate'+(pv?'':' miss');pl.textContent=pv||'＋車牌';if(r)pl.style.transform=keep;d.appendChild(pl)}
+    const ev=p.seat&&o.eta?o.eta(it):null;
+    if(ev){const e=document.createElement('span');e.className='eta '+(ev.cls||'');e.textContent=ev.text;if(r)e.style.transform=keep;d.appendChild(e)}
+    if(o.hit&&p.seat&&o.hit(it))d.classList.add('hit');
+    if(o.edit&&o.sel===it.id){
+      const h=document.createElement('button');h.className='rot-h';h.textContent='⟳';h.title='拖拉旋轉';h.setAttribute('aria-label','旋轉 '+it.label);d.appendChild(h);
+      const x=document.createElement('button');x.className='del-x';x.textContent='✕';x.setAttribute('aria-label','刪除 '+it.label);d.appendChild(x);
+    }
+    el.appendChild(d);
+  });
+  fitLabels(el);
+}
+
+/* 文字放不下時自動排版：細長形改直式，扁寬形改換行，仍放不下就縮小字 */
+function fitLabels(root){
+  root.querySelectorAll('.item').forEach(d=>{
+    const c=d.querySelector('.code'); if(!c)return;
+    const st=d.querySelector('.st'), pl=d.querySelector('.plate'), ev=d.querySelector('.eta'), ex=[st,pl,ev].filter(Boolean);
+    let W=d.clientWidth-8, H=d.clientHeight-8; if(W<=0||H<=0)return;
+    const r=(((Number(d.dataset.r)||0)%180)+180)%180;
+    if(r>45&&r<135){const t=W;W=H;H=t}          // 轉 90° 時，畫面上的寬高互換
+    c.style.whiteSpace='nowrap';
+    const fits=()=>c.offsetWidth<=W&&c.offsetHeight+ex.reduce((h,e)=>h+e.offsetHeight+2,0)<=H&&ex.every(e=>e.offsetWidth<=W);
+    if(fits())return;
+    if(st){st.style.whiteSpace='normal';st.style.maxWidth=W+'px'}   // 狀態文字太長時換行
+    if(fits())return;
+    if(H>W*1.15){                                 // 細長形 → 直式（一字一行）
+      const chars=Array.from(c.textContent); c.textContent='';
+      chars.forEach((ch,i)=>{if(i)c.appendChild(document.createElement('br'));c.appendChild(document.createTextNode(ch))});
+      c.style.whiteSpace='normal'; c.style.lineHeight='1.08';
+    }else{                                        // 扁寬形 → 自動換行
+      c.style.whiteSpace='normal'; c.style.wordBreak='break-all'; c.style.maxWidth=W+'px';
+    }
+    let fs=parseFloat(getComputedStyle(c).fontSize), ss=st?parseFloat(getComputedStyle(st).fontSize):99, ps=pl?parseFloat(getComputedStyle(pl).fontSize):99;
+    let guard=80;
+    while(!fits()&&guard-->0){                    // 先縮狀態與車牌，再縮桌號
+      if(st&&ss>8&&ss>fs*0.55){ss-=0.5;st.style.fontSize=ss+'px'}
+      else if(pl&&ps>8&&ps>fs*0.55){ps-=0.5;pl.style.fontSize=ps+'px'}
+      else if(fs>8){fs-=1;c.style.fontSize=fs+'px'}
+      else if(st&&ss>6){ss-=0.5;st.style.fontSize=ss+'px'}
+      else if(pl&&ps>6){ps-=0.5;pl.style.fontSize=ps+'px'}
+      else break;
+    }
+    if(!fits()&&pl&&pl.classList.contains('miss'))pl.remove();   // 空間真的不夠時，隱藏「＋車牌」提示
+  });
+}
+const fmtPlate=v=>{let t=String(v||'').toUpperCase().replace(/[^A-Z0-9-]/g,'').slice(0,10);
+  if(t.indexOf('-')<0){const m=t.match(/^([A-Z]+)([0-9]+)$/)||t.match(/^([0-9]+)([A-Z]+)$/);if(m)t=m[1]+'-'+m[2]}return t};
+const plateKey=v=>String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+
+/* ========== 同仁看板 ========== */
+async function pageBoard(){
+  shell('board'); const pin=await staffGate();
+  let L=null, ver=null, ST={}, offset=0, sound=false, actx=null, known=null, popId=null, q='', editTile=null;
+  const pushAsked=new Set();
+  $('body').innerHTML=`<div class="alertbar" id="alertbar"></div>
+    <div class="main">
+      <section class="card">
+        <div class="row" style="justify-content:space-between">
+          <div class="viewbtns" role="group" aria-label="顯示方式">
+            <button class="btn sm" id="vMap">座位圖</button>
+            <button class="btn sm" id="vList">列表</button>
+            <button class="btn sm" id="vWall">⛶ 大螢幕模式</button>
+          </div>
+          <div class="row" style="gap:6px">
+            <input class="search" id="plateQ" placeholder="🔍 搜尋車牌" maxlength="10" autocomplete="off" aria-label="搜尋車牌">
+            <button class="btn sm" id="soundBtn">🔔 開啟提示音</button>
+          </div>
+        </div>
+        <div class="legend">
+          <span><i class="sw" style="background:var(--free);border-color:var(--free-bd)"></i>空位</span>
+          <span><i class="sw" style="background:var(--busy);border-color:var(--busy-bd)"></i>有客人</span>
+          <span><i class="sw" style="background:var(--hold);border-color:var(--hold-bd)"></i>保留中</span>
+          <span><i class="sw" style="background:var(--alert);border-color:var(--alert)"></i>需要服務</span>
+          <span><i class="sw" style="border-style:dashed;border-color:var(--stale)"></i>坐很久，請確認</span>
+          <span>⏱ 預計交車　🚗 已通知交車</span>
+        </div>
+        <div class="floor board" id="floor"></div>
+        <div class="slist" id="slist" hidden></div>
+        <div class="row" style="justify-content:space-between"><p class="hint boardhint">顧客掃碼會自動入座；客人離開時請點該桌按「清桌」。</p><span class="conn" id="conn">連線中…</span></div>
+      </section>
+      <aside class="card" id="side"></aside>
+    </div>
+    <details class="card ntf" id="ntf"><summary><span>📱 手機推播通知（Telegram，螢幕關閉也會跳通知）</span><span class="badge" id="ntfBadge">未讀取</span></summary><div id="ntfBody"><p class="hint">讀取中…</p></div></details>`;
+  const now=()=>Date.now()+offset;
+  const st=id=>(ST[id]&&ST[id].s)||'free';
+  const plateOf=it=>st(it.id)==='free'?null:((ST[it.id]&&ST[it.id].plate)||'');
+  const isHit=it=>!!q&&plateKey(ST[it.id]&&ST[it.id].plate).includes(q);
+  const typing=()=>{const a=document.activeElement;return !!a&&(a.id==='popPlate'||a.id==='popEta'||a.classList.contains('tplate'))};
+  const etaMin=v=>{const m=String(v||'').match(/^(\d{2}):(\d{2})$/);return m?+m[1]*60+ +m[2]:null};
+  const nowMin=()=>{const d=new Date(now());return d.getHours()*60+d.getMinutes()};
+  const etaOf=it=>{const x=ST[it.id];if(!x||st(it.id)==='free')return null;
+    if(x.ready)return {text:'🚗 '+(x.ack?'已讀':'已通知'),cls:'done'};
+    if(!x.eta)return null;
+    return {text:'⏱ '+x.eta,cls:etaMin(x.eta)<nowMin()?'late':''}};
+  const seats=()=>{const ids=new Set(L.patterns.filter(p=>p.seat).map(p=>p.id));return L.items.filter(i=>ids.has(i.pid))};
+  const isStale=it=>{const x=ST[it.id];if(!x)return false;
+    if(x.s==='hold')return now()-x.at>L.settings.holdMinutes*60000;
+    return (x.s==='busy'||x.s==='alert')&&x.since&&now()-x.since>L.settings.stayHours*3600000};
+
+  function beep(){
+    if(!sound||!actx)return;
+    try{[0,0.25].forEach(d=>{const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=880;o.connect(g);g.connect(actx.destination);
+      g.gain.setValueAtTime(0.0001,actx.currentTime+d);g.gain.exponentialRampToValueAtTime(0.3,actx.currentTime+d+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+d+0.2);o.start(actx.currentTime+d);o.stop(actx.currentTime+d+0.22)})}catch(e){}
+  }
+  $('soundBtn').onclick=()=>{
+    sound=!sound;
+    if(sound){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();actx.resume();beep()}catch(e){sound=false}}
+    $('soundBtn').textContent=sound?'🔔 提示音已開啟':'🔔 開啟提示音';
+  };
+
+  /* ---- 顯示方式：座位圖／列表／大螢幕，依裝置自動選擇 ---- */
+  const savedView=lsGet('lounge_view');
+  let view=savedView||(innerWidth<600?'list':'map'), confirmId=null, confirmTimer=null;
+  function setView(v,save){
+    view=v; if(save)lsSet('lounge_view',v);
+    $('floor').hidden=v!=='map'; $('slist').hidden=v!=='list';
+    $('vMap').setAttribute('aria-pressed',v==='map'); $('vList').setAttribute('aria-pressed',v==='list');
+    draw(); drawList(); fit();
+  }
+  $('vMap').onclick=()=>setView('map',true);
+  $('vList').onclick=()=>setView('list',true);
+  $('vWall').onclick=()=>{
+    const on=!document.body.classList.contains('wall');
+    document.body.classList.toggle('wall',on);
+    $('vWall').textContent=on?'✕ 離開大螢幕模式':'⛶ 大螢幕模式';
+    $('vWall').setAttribute('aria-pressed',on);
+    try{if(on&&document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(()=>{});
+        if(!on&&document.fullscreenElement)document.exitFullscreen().catch(()=>{})}catch(e){}
+    if(on&&view!=='map')setView('map'); else fit();
+  };
+  function fit(){
+    const f=$('floor'); f.style.width='';
+    const wall=document.body.classList.contains('wall');
+    if(view!=='map'||(innerWidth<880&&!wall))return;
+    const top=f.getBoundingClientRect().top+scrollY;
+    const avail=innerHeight-top-(wall?40:56);
+    const w=Math.max(320,avail*1.6);
+    if(w<f.parentElement.clientWidth)f.style.width=Math.round(w)+'px';
+  }
+  let rT=null;
+  addEventListener('resize',()=>{clearTimeout(rT);rT=setTimeout(()=>{
+    if(!lsGet('lounge_view')){const v=innerWidth<600?'list':'map';if(v!==view){setView(v);return}}
+    fit()},150)});
+
+  const subText=(it,s)=>{const x=ST[it.id];
+    if(s==='alert'||s==='hold')return LABEL[s]+' '+mmss(now()-x.at);
+    if(s==='busy')return (isStale(it)?'⏰ ':'')+'已坐 '+dur(now()-x.since);
+    return '空位'};
+  const rank={alert:0,hold:1,busy:2,free:3};
+  function drawList(){
+    if(!L||view!=='list')return;
+    const box=$('slist'); box.innerHTML='';
+    const list=seats().filter(it=>!q||isHit(it)).sort((a,b)=>{const sa=st(a.id),sb=st(b.id);
+      if(rank[sa]!==rank[sb])return rank[sa]-rank[sb];
+      if(isStale(a)!==isStale(b))return isStale(a)?-1:1;
+      return a.label.localeCompare(b.label,'zh-Hant',{numeric:true})});
+    list.forEach(it=>{
+      const s=st(it.id), d=document.createElement('div');
+      d.className='stile '+s+(isStale(it)?' stale':'')+(isHit(it)?' hit':''); d.dataset.id=it.id;
+      d.innerHTML='<div class="lb"></div><div class="ss"></div><div class="tm"></div>';
+      d.querySelector('.lb').textContent=it.label; d.querySelector('.ss').textContent=LABEL[s];
+      const ev=etaOf(it);
+      if(ev){const e=document.createElement('div');e.className='eta '+(ev.cls||'');e.textContent=ev.text+(ev.cls==='late'?'（已超過）':'');d.appendChild(e)}
+      const pv=plateOf(it);
+      if(editTile===it.id){
+        const f=document.createElement('form');f.className='pform';
+        f.innerHTML='<input class="tplate" maxlength="10" placeholder="ABC-1234" autocomplete="off" aria-label="車牌"><button class="btn sm pri" type="submit">存</button>';
+        f.querySelector('input').value=pv||'';
+        f.onsubmit=e=>{e.preventDefault();const v=f.querySelector('input').value;editTile=null;act(it.id,'plate',v)};
+        d.appendChild(f); setTimeout(()=>{const i=f.querySelector('input');if(i)i.focus()},0);
+      }else if(pv!==null){
+        const pl=document.createElement('button');pl.className='plate'+(pv?'':' miss');pl.textContent=pv||'＋車牌';pl.dataset.a='editplate';d.appendChild(pl);
+      }
+      const b=document.createElement('button'); b.className='btn sm';
+      if(s==='alert'){b.textContent='已前往處理';b.dataset.a='resolve'}
+      else if(s==='free'){b.textContent='標記有客人';b.dataset.a='occupy'}
+      else if(confirmId===it.id){b.textContent='確定清桌？';b.className='btn sm warn';b.dataset.a='clear'}
+      else{b.textContent='清桌';b.dataset.a='ask'}
+      d.appendChild(b); box.appendChild(d);
+    });
+    tickList();
+  }
+  function tickList(){
+    if(view!=='list')return;
+    $('slist').querySelectorAll('.stile').forEach(d=>{const it=L.items.find(i=>i.id===d.dataset.id);if(it){const s=st(it.id);d.querySelector('.tm').textContent=s==='free'?'':subText(it,s).replace(LABEL[s]+' ','')}});
+  }
+  $('slist').addEventListener('click',e=>{
+    const b=e.target.closest('button[data-a]'); if(!b)return;
+    const id=b.closest('.stile').dataset.id, a=b.dataset.a;
+    if(a==='editplate'){editTile=id;drawList();return}
+    if(a==='ask'){confirmId=id;drawList();clearTimeout(confirmTimer);confirmTimer=setTimeout(()=>{confirmId=null;drawList()},3000);return}
+    confirmId=null; act(id,a);
+  });
+
+  function draw(){
+    if(!L)return;
+    if(view==='map')renderFloor($('floor'),L,{state:it=>st(it.id), stale:isStale, sub:subText, plate:plateOf, hit:isHit, eta:etaOf});
+    else tickList();
+    const bar=$('alertbar'); bar.innerHTML='';
+    seats().filter(t=>st(t.id)==='alert').sort((a,b)=>ST[a.id].at-ST[b.id].at).forEach(t=>{
+      const r=document.createElement('div');r.className='alertrow';
+      r.innerHTML='<span>⚠</span><b></b><span class="pslot"></span><span>需要服務</span><span class="t"></span><button class="btn warn">已前往處理</button>';
+      r.querySelector('b').textContent=t.label;
+      const pv=ST[t.id].plate; if(pv){const pl=document.createElement('span');pl.className='plate';pl.style.fontSize='13px';pl.style.cursor='default';pl.textContent=pv;r.querySelector('.pslot').appendChild(pl)} r.querySelector('.t').textContent='已等候 '+mmss(now()-ST[t.id].at);
+      r.querySelector('button').onclick=()=>act(t.id,'resolve'); bar.appendChild(r);
+    });
+  }
+  function drawSide(force){
+    if(!L)return;
+    if(!force&&typing())return;                   // 同仁正在輸入車牌時，不要刷新面板
+    const c={free:0,busy:0,hold:0,alert:0}; seats().forEach(t=>c[st(t.id)]++);
+    const t=seats().find(x=>x.id===popId);
+    $('side').innerHTML=`<h2>即時狀況</h2><div class="stats">
+      <div><b>${c.free}</b><span>空位</span></div><div><b>${c.busy}</b><span>有客人</span></div>
+      <div><b>${c.hold}</b><span>保留</span></div><div><b style="color:var(--alert)">${c.alert}</b><span>需服務</span></div></div>
+      <div class="section" id="pop"></div>`;
+    const p=$('pop');
+    if(!t){p.innerHTML='<p class="hint">點選座位圖上的桌子，可以處理警示或清桌。</p>';return}
+    const s=st(t.id), x=ST[t.id];
+    p.innerHTML=`<h2 id="popT"></h2><p class="hint" id="popI"></p>
+      <label class="field" for="popPlate">車牌號碼${s==='free'?'（輸入後會自動標記有客人）':''}</label>
+      <form class="pform" id="plateForm"><input id="popPlate" maxlength="10" placeholder="例如 ABC-1234" autocomplete="off"><button class="btn pri" type="submit">儲存</button></form>
+      <div class="row" id="popB"></div>`;
+    $('popT').textContent=t.label+' 桌 · '+LABEL[s];
+    $('popI').textContent=s==='free'?'目前沒有客人':'入座 '+dur(now()-x.since)+(x.plate?'':' · 客人尚未填寫車牌')+(x.by&&x.by!=='櫃台'?' · 上次由 '+x.by+' 接手':'');
+    if(s!=='free'){
+      const dv=document.createElement('div');dv.className='delivery section';
+      dv.innerHTML=`<label class="field" for="popEta">預計交車時間（顧客手機會看到）</label>
+        <form class="row" id="etaForm" style="flex-wrap:nowrap"><input type="time" id="popEta" step="300"><button class="btn" type="submit">儲存</button><button class="btn sm" type="button" id="etaClr">清除</button></form>
+        <div class="row" id="readyRow"></div><p class="hint" id="readyInfo"></p>`;
+      p.appendChild(dv);
+      $('popEta').value=x.eta||'';
+      $('etaForm').onsubmit=e=>{e.preventDefault();act(t.id,'eta',$('popEta').value);$('popEta').blur()};
+      $('etaClr').onclick=()=>act(t.id,'eta','');
+      const rr=$('readyRow');
+      const rb=(txt,cls,a)=>{const b=document.createElement('button');b.className='btn '+cls;b.textContent=txt;b.onclick=()=>act(t.id,a);rr.appendChild(b)};
+      if(!x.ready){rb('🚗 通知顧客交車','go','ready');$('readyInfo').textContent='車輛完工時按下，顧客手機會顯示「您的愛車已完成，請至服務櫃台」。'}
+      else{rb('取消交車通知','','unready');
+        $('readyInfo').textContent=(x.ack?'✅ 顧客已讀（'+new Date(x.ack).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false})+'）':'⏳ 顧客尚未讀取')+' · 通知時間 '+new Date(x.ready).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false})}
+    }
+    $('popPlate').value=(x&&x.plate)||'';
+    $('plateForm').onsubmit=e=>{e.preventDefault();act(t.id,'plate',$('popPlate').value);$('popPlate').blur()};
+    const add=(txt,cls,a)=>{const b=document.createElement('button');b.className='btn '+cls;b.textContent=txt;b.onclick=()=>act(t.id,a);$('popB').appendChild(b)};
+    if(s==='alert')add('已前往處理','warn','resolve');
+    if(s!=='free')add('客人已離開，清桌','pri','clear');
+    if(s==='hold')add('取消保留','','unhold');
+    if(s==='free')add('手動標記有客人','','occupy');
+  }
+  async function act(id,a,v){
+    try{const r=await api('apiStaff',pin,id,a,v||'');apply(r,true);toast({plate:'車牌已儲存',eta:v?'預計交車時間已儲存':'已清除預計交車時間',ready:'已通知顧客交車',unready:'已取消交車通知'}[a]||'已更新')}
+    catch(e){if(/密碼/.test(e.message||'')){lsDel('lounge_pin');location.reload()}else fail(e)}
+  }
+  function apply(r,force){
+    ST=r.status; offset=r.now-Date.now();
+    const alerts=Object.keys(ST).filter(k=>ST[k].s==='alert');
+    // 第二條推播路線：看板一發現新的「需要服務」，就請伺服器確認推播已送出（重複呼叫不會重複推播）
+    alerts.forEach(k=>{const key=k+':'+ST[k].at;if(!pushAsked.has(key)){pushAsked.add(key);api('apiPushService',k,'board').catch(()=>{})}});
+    if(known&&alerts.some(k=>!known.has(k)))beep();
+    known=new Set(alerts);
+    draw(); if(force||!typing())drawList(); drawSide(force);
+    $('conn').textContent='● 已連線 '+new Date().toLocaleTimeString('zh-TW',{hour12:false});
+  }
+  async function pull(){
+    try{
+      const r=await api('apiStatus',true);
+      const first=!L;
+      if(!L||r.ver!==ver){L=await api('apiLayout');ver=L.ver;$('hSub').textContent=L.settings.dealer}
+      apply(r);
+      if(first)setView(view);
+    }catch(e){$('conn').textContent='⚠ 連線中斷，自動重試中…'}
+    setTimeout(pull,((L&&L.settings.refresh)||5)*1000);
+  }
+  $('floor').addEventListener('pointerdown',e=>{const el=e.target.closest('.item.seat');if(el){popId=el.dataset.id;drawSide(true);
+    if(innerWidth<880&&$('pop'))$('pop').scrollIntoView({behavior:'smooth',block:'center'});
+    if(e.target.closest('.plate')&&$('popPlate'))setTimeout(()=>$('popPlate').focus(),0)}});
+  $('plateQ').addEventListener('input',e=>{
+    q=plateKey(e.target.value); draw(); drawList();
+    const hits=q?seats().filter(isHit):[];
+    if(hits.length===1){popId=hits[0].id;drawSide(true)}
+  });
+  /* ---- 手機推播設定面板 ---- */
+  async function loadNotify(){
+    const box=$('ntfBody');
+    try{
+      const n=await api('apiNotifyInfo',pin);
+      $('ntfBadge').textContent=n.ready&&n.on?'已啟用':(n.ready?'已關閉':'尚未啟用');
+      $('ntfBadge').className='badge '+(n.ready&&n.on?'ok':'no');
+      if(!n.ready){box.innerHTML=`<p class="note">推播尚未完成設定。請到 Apps Script 編輯器，在函式選單選擇 <b>setupNotify</b> → 按「執行」，依照執行記錄的提示完成。完成後重新整理這一頁。</p>`;return}
+      const rules=`<p class="note">什麼時候會通知：顧客按「需要服務」時立即通知；${n.svcMin} 分鐘仍未處理會再提醒（最多 3 次）；保留或入座過久各提醒一次。等候提醒只在 ${esc(n.hours||'全天')} 發送，這些都可以在試算表「設定」分頁調整。</p>`;
+      const test=`<li><button class="btn pri" id="ntfTest">傳送測試通知</button> <span class="hint" id="ntfMsg"></span></li>`;
+      box.innerHTML=`<p>已連結 Telegram 群組 <b id="tgGroup"></b>${n.members?`，目前 ${n.members} 位成員（含機器人）`:''}。新同仁照下面的步驟設定：</p>
+      <ol>
+        <li>在 iPhone／iPad 的 <b>App Store</b> 安裝 <b>Telegram</b>，用手機號碼註冊（Android 在 Google Play 安裝）。</li>
+        <li>請群組管理者把你加入這個群組。</li>
+        <li>手機詢問是否允許通知時選 <b>允許</b>，群組也<b>不要設成靜音</b>。之後 App 不用開著，鎖定畫面也會跳出通知。</li>
+        ${test}
+      </ol>${rules}<p class="note">同仁離職時，只要把他移出群組，就不會再收到通知。</p>`;
+      $('tgGroup').textContent='「'+(n.group||'客休室通知')+'」';
+      $('ntfTest').onclick=async()=>{$('ntfMsg').textContent='傳送中…';
+        try{$('ntfMsg').textContent=(await api('apiTestNotify',pin))?'已送出，手機幾秒內會收到':'送出失敗，請查看「紀錄」分頁'}catch(e){$('ntfMsg').textContent='送出失敗：'+(e.message||e)}};
+    }catch(e){box.innerHTML='<p class="err">讀取失敗：'+esc(e.message||e)+'</p>'}
+  }
+  $('ntf').addEventListener('toggle',()=>{if($('ntf').open)loadNotify()});
+  api('apiNotifyInfo',pin).then(n=>{$('ntfBadge').textContent=n.ready&&n.on?'已啟用':(n.ready?'已關閉':'尚未啟用');$('ntfBadge').className='badge '+(n.ready&&n.on?'ok':'no')}).catch(()=>{});
+  setInterval(()=>{draw();if(sound&&Object.values(ST).some(x=>x.s==='alert')&&Date.now()%30000<1000)beep()},1000);
+  pull();
+}
+
+/* ========== 編輯座位圖 ========== */
+async function pageEdit(){
+  shell('edit'); const pin=await staffGate();
+  let L; try{L=clone(await api('apiLayout'))}catch(e){$('body').innerHTML='<p class="err">讀取失敗：'+esc(e.message||e)+'</p>';return}
+  $('hSub').textContent=L.settings.dealer;
+  let selId=null, dirty=false, delAsk=null, draft={name:'',shape:'circle',seat:true,w:10,h:14,img:''};
+  $('body').innerHTML=`<div class="main">
+      <section class="card">
+        <div class="savebar" id="savebar"><span id="saveMsg">座位圖已是最新</span><button class="btn pri" id="saveBtn" disabled>💾 儲存座位圖</button></div>
+        <div class="floor edit" id="floor"></div>
+        <p class="hint">拖拉調整位置；拖拉上方藍色 ⟳ 可 360 度旋轉（會自動對齊 0°/90°/180°/270°）。紅色 ✕ 或鍵盤 Delete 刪除單一物件。改完記得按「儲存座位圖」。</p>
+      </section>
+      <aside class="card" id="side"></aside>
+    </div>`;
+  const pat=pid=>L.patterns.find(p=>p.id===pid)||{shape:'rect',seat:false,name:'?'};
+  const isSeat=it=>pat(it.pid).seat;
+  const markDirty=()=>{dirty=true;$('savebar').classList.add('dirty');$('saveMsg').textContent='有尚未儲存的變更';$('saveBtn').disabled=false};
+  window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
+  $('saveBtn').onclick=async()=>{
+    $('saveBtn').disabled=true;$('saveMsg').textContent='儲存中…';
+    try{L=clone(await api('apiSaveLayout',pin,L.patterns,L.items));dirty=false;$('savebar').classList.remove('dirty');$('saveMsg').textContent='已儲存，看板會自動更新';refresh()}
+    catch(e){$('saveBtn').disabled=false;$('saveMsg').textContent='儲存失敗：'+(e.message||e)}
+  };
+  const drawFloor=()=>renderFloor($('floor'),L,{edit:true,sel:selId});
+  function refresh(){drawFloor();drawSide()}
+  function snapshotUndo(msg){const snap=clone(L),s=selId;return()=>{L=snap;selId=s;markDirty();refresh();toast('已復原')}}
+  function deleteItem(id){
+    const it=L.items.find(i=>i.id===id); if(!it)return;
+    const undo=snapshotUndo();
+    L.items=L.items.filter(i=>i.id!==id); if(selId===id)selId=null; markDirty(); refresh();
+    toast('已刪除「'+it.label+'」',undo);
+  }
+  function nextLabel(){const u=new Set(L.items.map(i=>i.label));let n=1;while(u.has('N'+n))n++;return'N'+n}
+  function addItem(p){const it={id:newId(),pid:p.id,label:p.seat?nextLabel():p.name,x:50,y:50,w:p.w,h:p.h,r:0};L.items.push(it);selId=it.id;markDirty();refresh()}
+  function thumb(p){
+    const i=document.createElement('i');i.className='sh-'+p.shape;
+    const r=p.w/p.h; i.style.width=(r>=1.33?40:Math.round(30*r))+'px'; i.style.height=(r>=1.33?Math.max(10,Math.round(40/r)):30)+'px';
+    if(!p.seat){i.style.background='var(--fixture)';i.style.borderStyle='dashed'}
+    if(p.img){i.style.backgroundImage='url("'+p.img+'")';i.style.backgroundSize='contain'}
+    return i;
+  }
+
+  function drawSide(){
+    $('side').innerHTML=`
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <h2>圖案庫</h2><p class="hint">按「＋ 放一個」新增到座位圖。標籤上的 ✕ 只刪除那一個。</p>
+        <div class="plist" id="plist"></div>
+      </div>
+      <div class="section">
+        <h2>新增圖案</h2>
+        <label class="field">名稱<input id="nName" maxlength="12" placeholder="例如：L 型沙發、兒童區"></label>
+        <div class="row">
+          <label class="field" style="flex:1">外框形狀<select id="nShape">${Object.entries(SHAPES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
+          <label class="field" style="width:64px">寬 %<input id="nW" type="number" min="4" max="40"></label>
+          <label class="field" style="width:64px">高 %<input id="nH" type="number" min="4" max="40"></label>
+        </div>
+        <label class="check"><input type="checkbox" id="nSeat"> 這是客人座位（會有 QR Code 與狀態）</label>
+        <label class="field">圖片（選填，PNG／SVG／JPG，35KB 內）<input type="file" id="nImg" accept="image/png,image/svg+xml,image/jpeg,image/webp"></label>
+        <p class="hint" id="nMsg"></p>
+        <div class="row"><button class="btn pri" id="nAdd">加入圖案庫</button></div>
+      </div>
+      <div class="section" id="props"></div>`;
+    drawPatterns();
+    $('nName').value=draft.name;$('nShape').value=draft.shape;$('nW').value=draft.w;$('nH').value=draft.h;$('nSeat').checked=draft.seat;
+    $('nName').oninput=e=>draft.name=e.target.value;
+    $('nShape').onchange=e=>draft.shape=e.target.value;
+    $('nW').oninput=e=>draft.w=clamp(+e.target.value||10,4,40);
+    $('nH').oninput=e=>draft.h=clamp(+e.target.value||10,4,40);
+    $('nSeat').onchange=e=>draft.seat=e.target.checked;
+    if(draft.img)$('nMsg').textContent='已選擇圖片';
+    $('nImg').onchange=e=>{const f=e.target.files[0];if(!f)return;
+      if(f.size>35*1024){$('nMsg').textContent='圖片超過 35KB，請先壓縮（例如用 tinypng.com）再上傳。';e.target.value='';return}
+      const r=new FileReader();r.onload=()=>{draft.img=r.result;$('nMsg').textContent='已選擇圖片：'+f.name};r.readAsDataURL(f)};
+    $('nAdd').onclick=()=>{
+      const name=draft.name.trim(); if(!name){$('nMsg').textContent='請先填寫圖案名稱。';return}
+      L.patterns.push({id:'p'+newId(),name,shape:draft.shape,seat:draft.seat,w:draft.w,h:draft.h,img:draft.img});
+      draft={name:'',shape:'circle',seat:true,w:10,h:14,img:''}; markDirty(); drawSide();
+      $('nMsg').textContent='已加入「'+name+'」，可以在上方按「＋ 放一個」。';
+    };
+    drawProps();
+  }
+  function drawPatterns(){
+    const box=$('plist'); box.innerHTML='';
+    L.patterns.forEach(p=>{
+      const inst=L.items.filter(i=>i.pid===p.id);
+      const row=document.createElement('div');row.className='pitem';
+      row.innerHTML=`<div class="pthumb"></div><div style="min-width:0"><div class="pname"></div><div class="pmeta"></div></div>
+        <div class="row" style="gap:4px"><button class="btn sm pri" data-a="add">＋ 放一個</button><button class="btn sm" data-a="del">移除圖案</button></div>`;
+      row.querySelector('.pthumb').appendChild(thumb(p));
+      row.querySelector('.pname').textContent=p.name;
+      row.querySelector('.pmeta').textContent=SHAPES[p.shape]+' · '+(p.seat?'座位':'標示物')+' · 座位圖上 '+inst.length+' 個';
+      row.querySelector('[data-a=add]').onclick=()=>addItem(p);
+      row.querySelector('[data-a=del]').onclick=()=>{delAsk=p.id;drawPatterns()};
+      if(inst.length){const ch=document.createElement('div');ch.className='chips';
+        inst.forEach(i=>{const c=document.createElement('span');c.className='chip'+(selId===i.id?' on':'');
+          const a=document.createElement('button');a.textContent=i.label;a.onclick=()=>{selId=i.id;refresh()};
+          const x=document.createElement('button');x.className='x';x.textContent='✕';x.setAttribute('aria-label','刪除 '+i.label);x.onclick=()=>deleteItem(i.id);
+          c.append(a,x);ch.appendChild(c)});
+        row.appendChild(ch)}
+      if(delAsk===p.id){
+        const c=document.createElement('div');c.className='confirm';
+        c.innerHTML=inst.length?`<span>會把「${esc(p.name)}」從圖案庫移除，座位圖上的 ${inst.length} 個也會一起刪除。只想刪一個，請按標籤上的 ✕。</span>`:`<span>從圖案庫移除「${esc(p.name)}」？</span>`;
+        const r=document.createElement('div');r.className='row';
+        const y=document.createElement('button');y.className='btn sm warn';y.textContent=inst.length?'全部刪除':'確定移除';
+        y.onclick=()=>{const undo=snapshotUndo();L.items=L.items.filter(i=>i.pid!==p.id);L.patterns=L.patterns.filter(x=>x.id!==p.id);
+          if(selId&&!L.items.some(i=>i.id===selId))selId=null;delAsk=null;markDirty();refresh();toast('已移除圖案「'+p.name+'」',undo)};
+        const n=document.createElement('button');n.className='btn sm';n.textContent='取消';n.onclick=()=>{delAsk=null;drawPatterns()};
+        r.append(y,n);c.appendChild(r);row.appendChild(c);
+      }
+      box.appendChild(row);
+    });
+    if(!L.patterns.length)box.innerHTML='<p class="hint">圖案庫是空的，請在下方新增。</p>';
+  }
+  function drawProps(){
+    const pr=$('props'), it=L.items.find(i=>i.id===selId);
+    if(!it){pr.innerHTML='<h2>選取的物件</h2><p class="hint">在座位圖上點選物件，可修改桌號、圖案、大小或刪除。</p>';return}
+    const p=pat(it.pid);
+    pr.innerHTML=`<h2>選取的物件</h2>
+      <label class="field">${p.seat?'桌號（會印在 QR Code 卡上）':'標示文字'}<input id="pLabel" maxlength="8"></label>
+      <label class="field">圖案<select id="pPid"></select></label>
+      <div class="row"><label class="field" style="flex:1">寬度 %<input id="pW" type="number" min="4" max="40"></label>
+      <label class="field" style="flex:1">高度 %<input id="pH" type="number" min="4" max="40"></label></div>
+      <label class="field">旋轉角度<span class="row" style="flex-wrap:nowrap"><input id="pRr" type="range" min="0" max="359" step="1" style="flex:1"><input id="pR" type="number" min="0" max="359" style="width:76px"></span></label>
+      <div class="row"><button class="btn sm" id="rL">↺ 左轉 90°</button><button class="btn sm" id="rR">↻ 右轉 90°</button><button class="btn sm" id="r0">歸零</button></div>
+      <p class="err" id="pMsg"></p>
+      <div class="row"><button class="btn" id="pDup">複製一個</button><button class="btn warn" id="pDel">刪除這一個</button></div>`;
+    L.patterns.forEach(x=>{const o=document.createElement('option');o.value=x.id;o.textContent=x.name;$('pPid').appendChild(o)});
+    $('pPid').value=it.pid;$('pLabel').value=it.label;$('pW').value=it.w;$('pH').value=it.h;
+    $('pPid').onchange=e=>{it.pid=e.target.value;markDirty();refresh()};
+    $('pLabel').oninput=e=>{const v=e.target.value.trim();
+      const dup=p.seat&&L.items.some(o=>o!==it&&isSeat(o)&&o.label===v);
+      $('pMsg').textContent=dup?'這個桌號已經有了，請換一個。':'';
+      if(v&&!dup){it.label=v;markDirty();drawFloor()}};
+    $('pW').oninput=e=>{it.w=clamp(+e.target.value||it.w,4,40);markDirty();drawFloor()};
+    $('pH').oninput=e=>{it.h=clamp(+e.target.value||it.h,4,40);markDirty();drawFloor()};
+    $('pDup').onclick=()=>{const c=Object.assign({},it,{id:newId(),x:clamp(it.x+4,it.w/2,100-it.w/2),y:clamp(it.y+4,it.h/2,100-it.h/2),label:p.seat?nextLabel():it.label});L.items.push(c);selId=c.id;markDirty();refresh()};
+    $('pDel').onclick=()=>deleteItem(it.id);
+    $('pR').value=$('pRr').value=Number(it.r)||0;
+    $('pRr').oninput=e=>setRot(it,+e.target.value);
+    $('pR').oninput=e=>{if(e.target.value!=='')setRot(it,+e.target.value)};
+    $('rL').onclick=()=>setRot(it,(Number(it.r)||0)-90);
+    $('rR').onclick=()=>setRot(it,(Number(it.r)||0)+90);
+    $('r0').onclick=()=>setRot(it,0);
+  }
+  const normDeg=a=>((Math.round(a)%360)+360)%360;
+  function setRot(it,a){
+    it.r=normDeg(a); markDirty(); drawFloor();
+    if($('pR')&&selId===it.id){if(document.activeElement!==$('pR'))$('pR').value=it.r;$('pRr').value=it.r}
+  }
+
+  const floor=$('floor'); let drag=null, rot=null;
+  floor.addEventListener('pointerdown',e=>{
+    if(e.target.closest('.del-x')){e.preventDefault();deleteItem(e.target.closest('.item').dataset.id);return}
+    if(e.target.closest('.rot-h')){
+      e.preventDefault();
+      const it=L.items.find(i=>i.id===e.target.closest('.item').dataset.id), r=floor.getBoundingClientRect();
+      rot={it,cx:r.left+it.x/100*r.width,cy:r.top+it.y/100*r.height,moved:false};
+      floor.setPointerCapture(e.pointerId); return;
+    }
+    const el=e.target.closest('.item'); if(!el){if(selId){selId=null;refresh()}return}
+    const it=L.items.find(i=>i.id===el.dataset.id); selId=it.id; const r=floor.getBoundingClientRect();
+    drag={it,r,dx:e.clientX-(r.left+it.x/100*r.width),dy:e.clientY-(r.top+it.y/100*r.height),moved:false};
+    floor.setPointerCapture(e.pointerId); refresh();
+  });
+  floor.addEventListener('pointermove',e=>{
+    if(rot){
+      let a=Math.atan2(e.clientY-rot.cy,e.clientX-rot.cx)*180/Math.PI+90;
+      a=normDeg(a);
+      if(!e.shiftKey){
+        const near=[0,90,180,270,360].find(q=>Math.abs(a-q)<=5);
+        a=near!==undefined?near%360:Math.round(a/5)*5%360;
+      }
+      rot.moved=true; setRot(rot.it,a); return;
+    }
+    if(!drag)return;const{it,r}=drag;
+    it.x=Math.round(clamp(((e.clientX-drag.dx-r.left)/r.width)*100,it.w/2,100-it.w/2)*2)/2;
+    it.y=Math.round(clamp(((e.clientY-drag.dy-r.top)/r.height)*100,it.h/2,100-it.h/2)*2)/2;
+    drag.moved=true;drawFloor();
+  });
+  floor.addEventListener('pointerup',()=>{if(drag&&drag.moved)markDirty();drag=null;rot=null});
+  document.addEventListener('keydown',e=>{
+    if(!selId||/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName))return;
+    if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();deleteItem(selId)}
+    if(e.key==='r'||e.key==='R'){const it=L.items.find(i=>i.id===selId);if(it){e.preventDefault();setRot(it,(Number(it.r)||0)+(e.key==='R'?-15:15))}}
+  });
+  refresh();
+}
+
+/* ========== 列印 QR Code ========== */
+async function pageQR(){
+  shell('qr'); await staffGate();
+  let L; try{L=await api('apiLayout')}catch(e){$('body').innerHTML='<p class="err">讀取失敗：'+esc(e.message||e)+'</p>';return}
+  $('hSub').textContent=L.settings.dealer;
+  const ids=new Set(L.patterns.filter(p=>p.seat).map(p=>p.id));
+  const seats=L.items.filter(i=>ids.has(i.pid)).sort((a,b)=>a.label.localeCompare(b.label,'zh-Hant',{numeric:true}));
+  $('body').innerHTML=`<div class="card noprint"><div class="row" style="justify-content:space-between">
+      <p class="hint">共 ${seats.length} 個座位。按「列印」後選擇印表機或「另存為 PDF」，建議用 A4、縮放 100%。每張卡片裁下放在對應的桌上。</p>
+      <button class="btn pri" id="printBtn">🖨 列印</button></div>
+      <p class="hint">如果列印按鈕沒有反應，請按鍵盤 Ctrl + P（Mac 為 ⌘ + P）。</p></div>
+    <div class="qrgrid" id="grid"></div>`;
+  $('printBtn').onclick=()=>window.print();
+  const grid=$('grid');
+  seats.forEach(s=>{
+    const c=document.createElement('div');c.className='qrcard';
+    c.innerHTML='<div class="dealer"></div><div class="lbl"></div><div class="qr"></div><div class="tip">手機掃描 · 呼叫服務／保留座位</div><a target="_blank" rel="noopener">開啟顧客頁（測試用）</a>';
+    c.querySelector('.dealer').textContent=L.settings.dealer;
+    c.querySelector('.lbl').textContent=s.label;
+    c.querySelector('a').href=seatUrl(s.id);
+    grid.appendChild(c);
+    try{new QRCode(c.querySelector('.qr'),{text:seatUrl(s.id),width:160,height:160,correctLevel:QRCode.CorrectLevel.M})}
+    catch(e){c.querySelector('.qr').textContent='QR Code 產生失敗'}
+  });
+  if(!seats.length)grid.innerHTML='<p class="hint">座位圖上還沒有座位，請先到「編輯座位圖」新增。</p>';
+}
+
+/* ========== 顧客手機頁 ========== */
+async function pageCustomer(){
+  document.body.style.paddingTop='8px';
+  $('app').innerHTML=`<div class="cust">
+    <div class="brand" id="cDealer">客休室服務</div>
+    <div class="tbl" id="cTbl">—</div>
+    <div class="cstate" id="cState"></div>
+    <div id="cReady" hidden></div>
+    <div id="cBtns" style="display:flex;flex-direction:column;gap:14px"></div>
+    <div class="msg" id="cMsg">連線中…</div>
+    <div class="eta-card" id="cEta" hidden><div class="k">預計交車時間<span>服務顧問會依照維修進度更新</span></div><div class="v" id="cEtaV"></div></div>
+    <div class="pcard" id="cPlate" hidden></div>
+    <p class="foot">如需其他協助，請洽服務櫃台</p></div>`;
+  const key='scan_'+BOOT.table;
+  let cur=null, prev=null, busy=false, curPlate='', editing=false, lastSig='', wasReady=false, actx=null;
+  // 顧客第一次點畫面時解鎖音效，之後交車通知才能發出提示音
+  const unlock=()=>{try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();actx.resume()}catch(e){}};
+  document.addEventListener('pointerdown',unlock,{once:true});
+  function chime(){
+    try{if(navigator.vibrate)navigator.vibrate([200,100,200])}catch(e){}
+    if(!actx)return;
+    try{[0,0.18,0.36].forEach((d,i)=>{const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=[660,880,1100][i];o.connect(g);g.connect(actx.destination);
+      g.gain.setValueAtTime(0.0001,actx.currentTime+d);g.gain.exponentialRampToValueAtTime(0.25,actx.currentTime+d+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+d+0.3);o.start(actx.currentTime+d);o.stop(actx.currentTime+d+0.32)})}catch(e){}
+  }
+  let titleT=null;
+  function flashTitle(on){clearInterval(titleT);document.title='客休室服務';
+    if(on){let f=false;titleT=setInterval(()=>{f=!f;document.title=f?'🚗 愛車已完成':'客休室服務'},1000)}}
+  function renderReady(x){
+    const box=$('cReady'); box.hidden=!x.ready||cur==='free';
+    if(box.hidden){flashTitle(false);wasReady=false;return}
+    if(!wasReady){chime();if(!x.ack)flashTitle(true)}
+    wasReady=true;
+    box.className='ready';
+    box.innerHTML=x.ack
+      ?'<div class="t1">🚗 您的愛車已完成</div><div class="t2">已通知服務顧問，請至服務櫃台辦理交車</div>'
+      :'<div class="t1">🚗 您的愛車已完成</div><div class="t2">請攜帶隨身物品，至服務櫃台辦理交車</div><button id="ackBtn">我知道了</button>';
+    if(!x.ack){$('ackBtn').onclick=()=>{flashTitle(false);send('ack')}}
+  }
+  function renderPlate(){
+    const box=$('cPlate'); box.hidden=cur==='free'||!cur;
+    if(box.hidden)return;
+    if(curPlate&&!editing){
+      box.innerHTML='<div class="pl">車牌號碼</div><div class="row" style="justify-content:space-between"><span class="plate"></span><button class="linkbtn" id="pEdit">修改</button></div>';
+      box.querySelector('.plate').textContent=curPlate;
+      $('pEdit').onclick=()=>{editing=true;renderPlate();setTimeout(()=>$('pIn').focus(),0)};
+    }else{
+      box.innerHTML=`<div class="pl">車牌號碼 <span>（選填）</span></div>
+        <form class="pform" id="pForm"><input id="pIn" maxlength="10" placeholder="例如 ABC-1234" autocomplete="off" autocapitalize="characters" enterkeyhint="done"><button class="btn pri" type="submit">儲存</button></form>
+        <p class="hint">留下車牌，車輛完成時同仁能更快找到您。</p>`;
+      $('pIn').value=curPlate;
+      $('pIn').oninput=e=>{const p=e.target.selectionStart,v=e.target.value.toUpperCase();if(v!==e.target.value){e.target.value=v;try{e.target.setSelectionRange(p,p)}catch(_){}}};
+      $('pForm').onsubmit=e=>{e.preventDefault();const v=fmtPlate($('pIn').value);editing=false;$('pIn').blur();send('plate',v)};
+    }
+  }
+  function render(r,msg){
+    $('cDealer').textContent=r.dealer||'客休室服務'; $('cTbl').textContent=r.label;
+    const s=r.status.s; prev=cur; cur=s; curPlate=r.status.plate||'';
+    $('cState').innerHTML='<span class="pill '+s+'">'+LABEL[s]+'</span>';
+    const b=$('cBtns'); b.innerHTML='';
+    const add=(txt,cls,a,dis)=>{const x=document.createElement('button');x.className='big '+cls;x.textContent=txt;x.disabled=!!dis;x.onclick=()=>send(a);b.appendChild(x)};
+    if(s==='free'){add('我坐在這桌','scan','scan')}
+    else{
+      add(s==='alert'?'已通知同仁…':'需要服務','svc','service',s==='alert');
+      add(s==='hold'?'我回來了（取消保留）':'保留位置（暫時離座）','rsv',s==='hold'?'back':'hold');
+    }
+    renderPlate();
+    const x=r.status; lastSig=JSON.stringify(x);
+    renderReady(x);
+    $('cEta').hidden=!x.eta||!!x.ready||s==='free'; $('cEtaV').textContent=x.eta||'';
+    const by=x.by&&x.by!=='櫃台'?'同仁 '+x.by+' 已收到通知，正在前往':'同仁已收到通知，正在前往';
+    $('cMsg').textContent=r.msg||msg||(s==='alert'?'已通知同仁，請稍候':s==='hold'?'座位為您保留中，回座時請按「我回來了」':s==='busy'&&prev==='alert'?by:s==='free'?'此座位目前為空位':'有需要時請按「需要服務」');
+  }
+  async function send(a,v){
+    if(busy)return; busy=true; $('cMsg').textContent='傳送中…';
+    try{
+      const r=await api('apiCustomer',BOOT.table,a,v||'');
+      if(!r.ok){$('cTbl').textContent='';$('cBtns').innerHTML='';$('cMsg').textContent=r.msg;return}
+      if(a==='scan')lsSet(key,String(Date.now()));
+      if(a==='service')api('apiPushService',BOOT.table,'phone').catch(()=>{});   // 背景發送推播，不讓顧客等
+      render(r,{scan:'已入座，有需要隨時按下方按鈕',service:'已通知同仁，請稍候',hold:'已為您保留此座位',back:'歡迎回來',plate:v?'車牌已儲存，謝謝您':'已清除車牌',ack:'已通知服務顧問'}[a]);
+    }catch(e){$('cMsg').textContent='連線失敗，請再按一次或洽服務櫃台'}
+    finally{busy=false}
+  }
+  const last=+lsGet(key)||0;
+  await send(Date.now()-last>6*3600000?'scan':'peek');
+  setInterval(async()=>{if(busy)return;try{const r=await api('apiCustomer',BOOT.table,'peek');if(r.ok&&!editing&&document.activeElement!==$('pIn')&&JSON.stringify(r.status)!==lastSig)render(r)}catch(e){}},8000);
+}
+
+/* ========== 首頁（沒有經銷商代碼時）：說明＋新增經銷商小幫手 ========== */
+function pageHome(){
+  $('app').innerHTML=`<div class="wrap" style="max-width:720px"><header><div><h1>客休室座位看板</h1><div class="sub">顧客請掃描桌上的 QR Code；同仁請使用經銷商專屬連結</div></div></header>
+    <form class="card" id="hf"><h2>總部：新增一家經銷商</h2>
+      <p class="hint">填好後按「測試連線」，成功就把產生的那一行貼進 GitHub 的 dealers.json。</p>
+      <label class="field" for="hName">經銷商名稱<input id="hName" placeholder="例如：福特 OO 服務廠" maxlength="30"></label>
+      <label class="field" for="hCode">經銷商代碼（英文、數字、減號，會出現在網址上）<input id="hCode" placeholder="例如：oo-taipei" maxlength="40"></label>
+      <label class="field" for="hExec">Apps Script 網址（結尾是 /exec）<input id="hExec" placeholder="https://script.google.com/macros/s/…/exec"></label>
+      <div class="row"><button class="btn pri" type="submit">測試連線</button><span class="hint" id="hMsg"></span></div>
+      <div id="hOut" hidden class="section">
+        <h2>貼進 dealers.json 的內容</h2><pre id="hJson" style="white-space:pre-wrap;word-break:break-all;background:var(--floor);border:1px solid var(--line);border-radius:8px;padding:10px;font-family:var(--f-mono);font-size:13px;margin:0"></pre>
+        <div class="row"><button class="btn" type="button" id="hCopy">複製</button></div>
+        <p class="hint">同仁看板網址：<span id="hLink" style="user-select:all;word-break:break-all"></span></p>
+      </div>
+    </form></div>`;
+  $('hf').onsubmit=async e=>{
+    e.preventDefault();
+    const name=$('hName').value.trim(), code=$('hCode').value.trim().toLowerCase(), exec=$('hExec').value.trim();
+    $('hOut').hidden=true;
+    if(!/^[a-z0-9-]{2,40}$/.test(code)){$('hMsg').textContent='代碼只能用英文小寫、數字和減號，2～40 個字';return}
+    if(!EXEC_RE.test(exec)){$('hMsg').textContent='Apps Script 網址格式不對，要以 https://script.google.com/ 開頭、/exec 結尾';return}
+    $('hMsg').textContent='連線中…';
+    try{
+      const L=await callExec(exec,'apiLayout',[]);
+      $('hMsg').textContent='✅ 連線成功：試算表裡的經銷商名稱是「'+(L.settings.dealer||'（未填）')+'」';
+      const line=JSON.stringify(code)+': { "name": '+JSON.stringify(name||L.settings.dealer||code)+', "exec": '+JSON.stringify(exec)+' }';
+      $('hJson').textContent=line; $('hLink').textContent=BASE+'?d='+code; $('hOut').hidden=false;
+      $('hCopy').onclick=()=>{navigator.clipboard.writeText(line).then(()=>toast('已複製'),()=>toast('請手動選取後複製'))};
+    }catch(err){$('hMsg').textContent='❌ 連線失敗：'+err.message+'。請確認部署時「誰可以存取」選的是「所有人」，並已用新版本部署。'}
+  };
+}
+function pageError(msg){
+  $('app').innerHTML='<div class="wrap" style="max-width:520px;padding-top:40px;text-align:center"><h1 style="font-size:20px">客休室服務</h1><p class="err" style="font-size:15px;margin-top:16px"></p><p class="hint">如需協助，請洽服務櫃台</p></div>';
+  $('app').querySelector('.err').textContent=msg;
+}
+async function boot(){
+  if(!BOOT.dealer)return pageHome();
+  try{
+    const r=await fetch('dealers.json',{cache:'no-cache'});
+    const list=await r.json();
+    const d=Object.prototype.hasOwnProperty.call(list,BOOT.dealer)?list[BOOT.dealer]:null;
+    if(!d||!EXEC_RE.test(String(d.exec||'')))throw new Error('no dealer');
+    BOOT.exec=d.exec; BOOT.name=d.name||'';
+  }catch(e){return pageError('找不到這個經銷商的設定，請確認連結是否正確。')}
+  if(BOOT.page==='customer')document.title='客休室服務';
+  ({board:pageBoard,edit:pageEdit,qr:pageQR,customer:pageCustomer}[BOOT.page]||pageBoard)();
+}
+boot();
+</script>
+</body>
+</html>
